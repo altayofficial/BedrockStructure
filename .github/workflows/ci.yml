@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-22.04
+    if: "!contains(github.event.head_commit.message, '[ci skip]')"
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.1", "8.2", "8.3", "8.4"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # stock PHP builds lack the extensions altayofficial/altay needs (encoding, chunkutils2, morton, ...)
+      - name: Setup PHP
+        uses: altayofficial/setup-php-action@altay-1.0.0
+        with:
+          php-version: ${{ matrix.php }}
+          install-path: "./bin"
+          pm-version-major: "5"
+
+      - name: Restore Composer package cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/composer/files
+            ~/.cache/composer/vcs
+          key: "composer-v2-cache-${{ matrix.php }}-${{ hashFiles('./composer.json') }}"
+          restore-keys: |
+            composer-v2-cache-${{ matrix.php }}-
+
+      - name: Validate composer.json
+        run: composer validate --strict --no-check-publish
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Run PHPStan
+        run: ./vendor/bin/phpstan analyze --no-progress --memory-limit=2G
+
+      - name: Run PHPUnit
+        run: ./vendor/bin/phpunit
